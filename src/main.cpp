@@ -1,5 +1,6 @@
 
 #include <iostream>
+#include "JuceHeader.h"
 
 using namespace std;
 

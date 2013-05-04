@@ -2,3 +2,7 @@ bin/*
 !bin/.gitkeep
 CMakeFiles
 *.cmake
+CMakeCache.txt
+lib/vstsdk*
+tmp
+plugins

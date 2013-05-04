@@ -21,6 +21,9 @@ ACCEL_LIBRARY:FILEPATH=/System/Library/Frameworks/Accelerate.framework
 AUDIOTB_LIBRARY:FILEPATH=/System/Library/Frameworks/AudioToolbox.framework
 
 //Path to a library.
+AUDIOUNIT_LIBRARY:FILEPATH=/System/Library/Frameworks/AudioUnit.framework
+
+//Path to a library.
 CARBON_LIBRARY:FILEPATH=/System/Library/Frameworks/Carbon.framework
 
 //Path to a program.
@@ -185,10 +188,16 @@ CMAKE_XCODE_SELECT:FILEPATH=/usr/bin/xcode-select
 COCOA_LIBRARY:FILEPATH=/System/Library/Frameworks/Cocoa.framework
 
 //Path to a library.
+CORE_AUDIO_KIT_LIBRARY:FILEPATH=/System/Library/Frameworks/CoreAudioKit.framework
+
+//Path to a library.
 CORE_AUDIO_LIBRARY:FILEPATH=/System/Library/Frameworks/CoreAudio.framework
 
 //Path to a library.
 CORE_MIDI_LIBRARY:FILEPATH=/System/Library/Frameworks/CoreMidi.framework
+
+//Path to a library.
+CORE_SERVICE_LIBRARY:FILEPATH=/System/Library/Frameworks/CoreServices.framework
 
 //Path to a library.
 DISC_LIBRARY:FILEPATH=/System/Library/Frameworks/DiscRecording.framework

@@ -1,6 +1,7 @@
 
 #include <iostream>
 #include "JuceHeader.h"
+#include "mongoose.h"
 
 // #include <csignal>
 // #define EMBED_BREAKPOINT raise(SIGINT)
@@ -126,6 +127,21 @@ bool handleAudioRequest(const AudioRequestParameters &params, MemoryBlock &memor
   }
 }
 
+static int begin_request_handler(struct mg_connection *conn) {
+  DEBUG << "Starting to handle audio request" << endl;
+  MemoryBlock block;
+  handleAudioRequest(AudioRequestParameters(), block);
+  DEBUG << "Rendered audio request" << endl;
+
+  mg_printf(conn, "HTTP/1.0 200 OK\r\n"
+            "Content-Length: %d\r\n"
+            "Content-Type: audio/vnw.wave\r\n",
+            block.getSize());
+  mg_write(conn, block.getData(), block.getSize());
+
+  return 1;
+}
+
 int main (int argc, char *argv[]) {
   Logger::setCurrentLogger(&DEBUG_LOGGER);
 
@@ -133,11 +149,23 @@ int main (int argc, char *argv[]) {
   pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
 
   // Test: fire a request manually
+  /*
   DEBUG << "Firing test request" << endl;
   MemoryBlock testBlock;
   handleAudioRequest(AudioRequestParameters(), testBlock);
   File testFile(resolveRelativePath("tmp/output2.wav"));
   testFile.replaceWithData(testBlock.getData(), testBlock.getSize());
+  */
+
+  struct mg_context *ctx;
+  const char *options[] = {"listening_ports", "8080", NULL};
+  struct mg_callbacks callbacks;
+
+  memset(&callbacks, 0, sizeof(callbacks));
+  callbacks.begin_request = begin_request_handler;
+  ctx = mg_start(&callbacks, NULL, options);
+  getchar();  // Wait until user hits "enter"
+  mg_stop(ctx);
 
   return 0;
 }

@@ -3,6 +3,7 @@ project(jucebouncer)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY bin)
 add_executable(jucebouncer
   src/main.cpp
+  lib/mongoose/mongoose.c
   lib/juce/modules/juce_core/juce_core.cpp
   lib/juce/modules/juce_audio_basics/juce_audio_basics.cpp
   lib/juce/modules/juce_audio_devices/juce_audio_devices.cpp
@@ -16,7 +17,7 @@ add_executable(jucebouncer
   lib/juce/modules/juce_gui_extra/juce_gui_extra.cpp
   )
 
-include_directories(lib/juce lib/vstsdk2.4 JuceLibraryCode)
+include_directories(lib/juce lib/vstsdk2.4 JuceLibraryCode lib/mongoose)
 add_definitions(-DNDEBUG)
 
 if(APPLE)

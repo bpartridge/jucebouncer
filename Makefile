@@ -378,6 +378,30 @@ lib/juce/modules/juce_gui_extra/juce_gui_extra.cpp.s:
 	$(MAKE) -f CMakeFiles/jucebouncer.dir/build.make CMakeFiles/jucebouncer.dir/lib/juce/modules/juce_gui_extra/juce_gui_extra.cpp.s
 .PHONY : lib/juce/modules/juce_gui_extra/juce_gui_extra.cpp.s
 
+lib/mongoose/mongoose.o: lib/mongoose/mongoose.c.o
+.PHONY : lib/mongoose/mongoose.o
+
+# target to build an object file
+lib/mongoose/mongoose.c.o:
+	$(MAKE) -f CMakeFiles/jucebouncer.dir/build.make CMakeFiles/jucebouncer.dir/lib/mongoose/mongoose.c.o
+.PHONY : lib/mongoose/mongoose.c.o
+
+lib/mongoose/mongoose.i: lib/mongoose/mongoose.c.i
+.PHONY : lib/mongoose/mongoose.i
+
+# target to preprocess a source file
+lib/mongoose/mongoose.c.i:
+	$(MAKE) -f CMakeFiles/jucebouncer.dir/build.make CMakeFiles/jucebouncer.dir/lib/mongoose/mongoose.c.i
+.PHONY : lib/mongoose/mongoose.c.i
+
+lib/mongoose/mongoose.s: lib/mongoose/mongoose.c.s
+.PHONY : lib/mongoose/mongoose.s
+
+# target to generate assembly for a file
+lib/mongoose/mongoose.c.s:
+	$(MAKE) -f CMakeFiles/jucebouncer.dir/build.make CMakeFiles/jucebouncer.dir/lib/mongoose/mongoose.c.s
+.PHONY : lib/mongoose/mongoose.c.s
+
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
 
@@ -444,6 +468,9 @@ help:
 	@echo "... lib/juce/modules/juce_gui_extra/juce_gui_extra.o"
 	@echo "... lib/juce/modules/juce_gui_extra/juce_gui_extra.i"
 	@echo "... lib/juce/modules/juce_gui_extra/juce_gui_extra.s"
+	@echo "... lib/mongoose/mongoose.o"
+	@echo "... lib/mongoose/mongoose.i"
+	@echo "... lib/mongoose/mongoose.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"

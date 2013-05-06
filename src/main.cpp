@@ -8,6 +8,14 @@
 using namespace std;
 using namespace juce;
 
+static std::ostream &DEBUG = cerr;
+class DebugLogger : public Logger {
+  void logMessage(const String &message) {
+    DEBUG << message << endl;
+  }
+};
+static DebugLogger DEBUG_LOGGER;
+
 String resolveRelativePath(String relativePath) {
   return File::getCurrentWorkingDirectory().getChildFile(relativePath).getFullPathName();
 }
@@ -23,7 +31,7 @@ AudioPluginInstance *getSynthInstance(AudioPluginFormatManager &formatManager) {
 }
 
 int main (int argc, char *argv[]) {
-  std::ostream &DEBUG = cout;
+  Logger::setCurrentLogger(&DEBUG_LOGGER);
 
   DEBUG << "Creating plugin manager" << endl;
   AudioPluginFormatManager pluginManager;
@@ -40,24 +48,33 @@ int main (int argc, char *argv[]) {
   OptionalScopedPointer<AudioFormat> wavFormat(formatManager.findFormatForFileExtension("wav"), false);
   
   DEBUG << "Preparing plugin" << endl;
-  int sampleRate = 44100, blockSize = 2056, bitDepth = 16, nChannels = 2, nSeconds = 5;
+  int sampleRate = 44100, blockSize = 2056, bitDepth = 16, nChannels = 2, nSeconds = 3;
   instance->setNonRealtime(true);
   instance->prepareToPlay(sampleRate, blockSize);
 
   DEBUG << "Preparing output" << endl;
-  File oFile = File::getCurrentWorkingDirectory().getChildFile("tmp/output.wav");
-  FileOutputStream oStream(oFile);
-  OptionalScopedPointer<AudioFormatWriter> writer(wavFormat->createWriterFor(&oStream, sampleRate, nChannels, bitDepth, StringPairArray(), 0), false);
+  File oFile(resolveRelativePath("tmp/output.wav"));
+  oFile.deleteFile();
+  // The writer will delete the output stream when it is deleted.
+  // Note that passing a locally-scoped OutputStream to the writer creation will result in a double-free.
+  OptionalScopedPointer<FileOutputStream> oStream(oFile.createOutputStream(), false);
+  OptionalScopedPointer<AudioFormatWriter> writer(wavFormat->createWriterFor(oStream, sampleRate, nChannels, bitDepth, StringPairArray(), 0), true);
 
   DEBUG << "Preparing MIDI" << endl;
+  int midiChannel = 1;
+  float noteSeconds = 1;
   MidiBuffer midiBuffer;
-  // TODO
+  midiBuffer.addEvent(MidiMessage::noteOn(midiChannel, 60, 1.0f), 0);
+  midiBuffer.addEvent(MidiMessage::noteOn(midiChannel, 67, 1.0f), 0);
+  midiBuffer.addEvent(MidiMessage::noteOn(midiChannel, 76, 1.0f), 0);
+  midiBuffer.addEvent(MidiMessage::allNotesOff(midiChannel), noteSeconds * sampleRate);
 
   AudioSampleBuffer buffer(nChannels, blockSize);
   int numBuffers = nSeconds * sampleRate / blockSize;
   for (int i = 0; i < numBuffers; ++i) {
-    DEBUG << "Processing block " << i << endl;
+    DEBUG << "Processing block " << i << "..." << flush;
     instance->processBlock(buffer, midiBuffer);
+    DEBUG << " left RMS level " << buffer.getRMSLevel(0, 0, blockSize) << endl;
     writer->writeFromAudioSampleBuffer(buffer, 0 /* offset */, blockSize);
   }
 

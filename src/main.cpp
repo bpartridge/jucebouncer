@@ -76,16 +76,22 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
                         ThreadSafePlugin *plugin = nullptr) {
   if (!plugin) {
     // Recurse with a plugin from the pool, locking on it.
-    int i = 0;
-    while (plugin = pluginPool[i++]) {
-      const ScopedTryLock pluginTryLock(plugin->crit);
-      if (pluginTryLock.isLocked()) {
-        return handleAudioRequest(params, ostream, plugin);
+    // Keep trying with a delay until a timeout occurs.
+    const int TIMEOUT = 5000, WAIT = 200;
+    int64 startTime = Time::currentTimeMillis();
+
+    while (Time::currentTimeMillis() < startTime + TIMEOUT) {
+      int i = 0;
+      while (plugin = pluginPool[i++]) {
+        const ScopedTryLock pluginTryLock(plugin->crit);
+        if (pluginTryLock.isLocked()) {
+          return handleAudioRequest(params, ostream, plugin);
+        }
       }
+      Thread::sleep(WAIT);
     }
 
-    // We were unable to acquire the lock on this plugin instance.
-    // TODO: try again until a timeout.
+    // If we were unable to obtain a lock, return failure.
     return false;
   }
   else {

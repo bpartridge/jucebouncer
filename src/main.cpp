@@ -2,6 +2,7 @@
 #include <iostream>
 #include "JuceHeader.h"
 #include "mongoose.h"
+#include "NonDeletingOutputStream.h"
 
 // #include <csignal>
 // #define EMBED_BREAKPOINT raise(SIGINT)
@@ -71,7 +72,7 @@ struct AudioRequestParameters {
   }
 };
 
-bool handleAudioRequest(const AudioRequestParameters &params, MemoryBlock &memory, 
+bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostream, 
                         ThreadSafePlugin *plugin = nullptr) {
   if (!plugin) {
     // Recurse with a plugin from the pool, locking on it.
@@ -79,7 +80,7 @@ bool handleAudioRequest(const AudioRequestParameters &params, MemoryBlock &memor
     while (plugin = pluginPool[i++]) {
       const ScopedTryLock pluginTryLock(plugin->crit);
       if (pluginTryLock.isLocked()) {
-        return handleAudioRequest(params, memory, plugin);
+        return handleAudioRequest(params, ostream, plugin);
       }
     }
 
@@ -101,9 +102,9 @@ bool handleAudioRequest(const AudioRequestParameters &params, MemoryBlock &memor
     instance->setNonRealtime(true);
 
     // The writer takes ownership of the output stream; the writer will delete it when the writer leaves scope.
-    // Note that passing a locally-scoped OutputStream to the writer creation will result in a double-free.
-    ScopedPointer<AudioFormatWriter> writer(outputFormat->createWriterFor(
-      new MemoryOutputStream(memory, false /* don't append */), 
+    // Therefore, we pass a special pointer class that does not allow the writer to delete it.
+    OutputStream *ostreamNonDeleting = new NonDeletingOutputStream(&ostream);
+    ScopedPointer<AudioFormatWriter> writer(outputFormat->createWriterFor(ostreamNonDeleting,
       params.sampleRate, params.nChannels, params.bitDepth,
       StringPairArray(), 0));
 
@@ -130,7 +131,8 @@ bool handleAudioRequest(const AudioRequestParameters &params, MemoryBlock &memor
 static int begin_request_handler(struct mg_connection *conn) {
   DEBUG << "Starting to handle audio request" << endl;
   MemoryBlock block;
-  handleAudioRequest(AudioRequestParameters(), block);
+  MemoryOutputStream ostream(block, false);
+  handleAudioRequest(AudioRequestParameters(), ostream);
   DEBUG << "Rendered audio request" << endl;
 
   mg_printf(conn, "HTTP/1.0 200 OK\r\n"
@@ -151,11 +153,15 @@ int main (int argc, char *argv[]) {
 
   // Test: fire a request manually
   /*
-  DEBUG << "Firing test request" << endl;
-  MemoryBlock testBlock;
-  handleAudioRequest(AudioRequestParameters(), testBlock);
-  File testFile(resolveRelativePath("tmp/output2.wav"));
-  testFile.replaceWithData(testBlock.getData(), testBlock.getSize());
+  {
+    DEBUG << "Firing test request" << endl;
+    MemoryBlock testBlock;
+    MemoryOutputStream ostream(testBlock, false);
+    handleAudioRequest(AudioRequestParameters(), ostream);
+    File testFile(resolveRelativePath("tmp/output2.wav"));
+    testFile.replaceWithData(testBlock.getData(), testBlock.getSize());
+    DEBUG << "Done firing test request" << endl;
+  }
   */
 
   struct mg_context *ctx;
@@ -165,6 +171,7 @@ int main (int argc, char *argv[]) {
   memset(&callbacks, 0, sizeof(callbacks));
   callbacks.begin_request = begin_request_handler;
   ctx = mg_start(&callbacks, NULL, options);
+  DEBUG << "Waiting for enter" << endl;
   getchar();  // Wait until user hits "enter"
   mg_stop(ctx);
 

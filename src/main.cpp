@@ -135,7 +135,8 @@ static int begin_request_handler(struct mg_connection *conn) {
 
   mg_printf(conn, "HTTP/1.0 200 OK\r\n"
             "Content-Length: %d\r\n"
-            "Content-Type: audio/vnw.wave\r\n",
+            "Content-Type: audio/vnw.wave\r\n"
+            "\r\n",
             block.getSize());
   mg_write(conn, block.getData(), block.getSize());
 

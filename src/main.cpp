@@ -2,8 +2,8 @@
 #include <iostream>
 #include "JuceHeader.h"
 
-#include <csignal>
-#define EMBED_BREAKPOINT raise(SIGINT)
+// #include <csignal>
+// #define EMBED_BREAKPOINT raise(SIGINT)
 
 using namespace std;
 using namespace juce;
@@ -23,12 +23,45 @@ AudioPluginInstance *getSynthInstance(AudioPluginFormatManager &formatManager) {
 }
 
 int main (int argc, char *argv[]) {
-  AudioPluginFormatManager formatManager;
-  formatManager.addDefaultFormats();
+  std::ostream &DEBUG = cout;
 
-  ScopedPointer<AudioPluginInstance> instance(getSynthInstance(formatManager));
+  DEBUG << "Creating plugin manager" << endl;
+  AudioPluginFormatManager pluginManager;
+  pluginManager.addDefaultFormats();
+
+  DEBUG << "Creating audio plugin instance" << endl;
+  ScopedPointer<AudioPluginInstance> instance(getSynthInstance(pluginManager));
   if (!instance) return 1;
-  cout << instance->getName() << endl;
+  DEBUG << instance->getName() << endl;
+
+  DEBUG << "Creating audio format manager" << endl;
+  AudioFormatManager formatManager;
+  formatManager.registerBasicFormats();
+  OptionalScopedPointer<AudioFormat> wavFormat(formatManager.findFormatForFileExtension("wav"), false);
+  
+  DEBUG << "Preparing plugin" << endl;
+  int sampleRate = 44100, blockSize = 2056, bitDepth = 16, nChannels = 2, nSeconds = 5;
+  instance->setNonRealtime(true);
+  instance->prepareToPlay(sampleRate, blockSize);
+
+  DEBUG << "Preparing output" << endl;
+  File oFile = File::getCurrentWorkingDirectory().getChildFile("tmp/output.wav");
+  FileOutputStream oStream(oFile);
+  OptionalScopedPointer<AudioFormatWriter> writer(wavFormat->createWriterFor(&oStream, sampleRate, nChannels, bitDepth, StringPairArray(), 0), false);
+
+  DEBUG << "Preparing MIDI" << endl;
+  MidiBuffer midiBuffer;
+  // TODO
+
+  AudioSampleBuffer buffer(nChannels, blockSize);
+  int numBuffers = nSeconds * sampleRate / blockSize;
+  for (int i = 0; i < numBuffers; ++i) {
+    DEBUG << "Processing block " << i << endl;
+    instance->processBlock(buffer, midiBuffer);
+    writer->writeFromAudioSampleBuffer(buffer, 0 /* offset */, blockSize);
+  }
+
+  DEBUG << "Done!" << endl;
 
   return 0;
 }

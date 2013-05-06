@@ -12,40 +12,23 @@ String resolveRelativePath(String relativePath) {
   return File::getCurrentWorkingDirectory().getChildFile(relativePath).getFullPathName();
 }
 
-void scanPlugins(KnownPluginList &list) {
-  AudioPluginFormatManager formatManager;
-  formatManager.addDefaultFormats();
-  // AudioPluginFormat *format = formatManager.getFormat(1);
-  // if (!format) {
-  //   cout << "No format" << endl;
-  //   return;
-  // }
-  // cout << "format: " << format->getName() << endl;
+// The caller is responsible for deleting the object that is returned
+AudioPluginInstance *getSynthInstance(AudioPluginFormatManager &formatManager) {
+  PluginDescription desc;
+  desc.fileOrIdentifier = resolveRelativePath("plugins/FreeAlpha.vst");
+  desc.uid = 0;
 
-  // FileSearchPath searchPath(resolveRelativePath("plugins"));
-  // bool searchRecursively(true);
-  // const File deadMansPedalFile(resolveRelativePath("tmp/deadMansPedalFile"));
-  // PluginDirectoryScanner scanner(list, *format, searchPath, searchRecursively, deadMansPedalFile);
-  // bool result;
-  // do {
-  //   result = scanner.scanNextFile(true);
-  //   cout << "scanned, result: " << result << endl;
-  // } while(result);
-
-  OwnedArray<PluginDescription> typesFound;
-  String filename = resolveRelativePath("plugins/FreeAlpha.vst");
-
-  StringArray filenames(filename);
-  list.scanAndAddDragAndDroppedFiles(formatManager, filenames, typesFound);
+  String errorMessage;
+  return formatManager.createPluginInstance(desc, errorMessage);
 }
 
 int main (int argc, char *argv[]) {
-  // cout << "Message thread: " << MessageManager::getInstance()->isThisTheMessageThread() << endl;
+  AudioPluginFormatManager formatManager;
+  formatManager.addDefaultFormats();
 
-  KnownPluginList pluginList;
-  scanPlugins(pluginList);
-  cout << "Known types: " << pluginList.getNumTypes() << endl;
-  if (!pluginList.getNumTypes()) return 1;
+  ScopedPointer<AudioPluginInstance> instance(getSynthInstance(formatManager));
+  if (!instance) return 1;
+  cout << instance->getName() << endl;
 
   return 0;
 }

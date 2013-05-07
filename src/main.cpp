@@ -242,7 +242,7 @@ int main (int argc, char *argv[]) {
   memset(&callbacks, 0, sizeof(callbacks));
   callbacks.begin_request = begin_request_handler;
   ctx = mg_start(&callbacks, NULL, options);
-  DBG << "Waiting for enter" << endl;
+  DBG << "Server started! Press ENTER to exit." << endl;
   getchar();  // Wait until user hits "enter"
   DBG << "Shutting down server threads" << endl;
   mg_stop(ctx);

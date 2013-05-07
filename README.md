@@ -36,9 +36,8 @@ service is running on port 8080:
 `curl localhost:8080/render.wav -s -d '{"midiPitch":80}' | play -`
 to hear the sound. 
 
-- Otherwise, if on OS X, run:
-
-    curl localhost:8080/render.wav -d '{"midiPitch":80}' > tmp/render2.wav && echo "Playing sound..." && afplay tmp/render2.wav
+- Otherwise, if on OS X, run: 
+`curl localhost:8080/render.wav -d '{"midiPitch":80}' > tmp/render2.wav && echo "Playing" && afplay tmp/render2.wav`
 
 - `curl localhost:8080/list.json` should emit a list of parameter names that can be manipulated.
 

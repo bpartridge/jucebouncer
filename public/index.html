@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link href="css/bootstrap.min.css" rel="stylesheet" media="screen"></link>
+  <link href="css/bootstrap-responsive.min.css" rel="stylesheet" media="screen"></link>
+  <link href="css/slider.css" rel="stylesheet" media="screen"></link>
+  <style>
+    .slider {float: right;}
+  </style>
+  <script src="/js/jquery.min.js"></script>
+  <script src="/js/underscore-min.js"></script>
+  <script src="/js/bootstrap-slider.js"></script>
+  <script src="/js/soundmanager2.js"></script>
+  <script>
+    var INITIAL_VALUE = 0.5, EPS = 0.001;
+    var sliderElements = [];
+
+    function roundDec(value) {
+      return Math.round(value*100)/100;
+    }
+
+    String.prototype.hashCode = function(){
+      var hash = 0;
+      if (this.length == 0) return hash;
+      for (i = 0; i < this.length; i++) {
+        char = this.charCodeAt(i);
+        hash = ((hash<<5)-hash)+char;
+        hash = hash & hash; // Convert to 32bit integer
+      }
+      return hash;
+    }
+
+    var submit = function() {
+      var data = {parameters: {}};
+      _(sliderElements).each(function(elem) {
+        var val = elem.data('slider').getValue();
+
+        var name;
+        if (name = elem.data('parameterName')) {
+          data.parameters[name] = roundDec(val);
+        }
+        else if (name = elem.data('name')) {
+          data[name] = roundDec(val);
+        }
+
+      });
+
+      var dataStr = JSON.stringify(data);
+      console.log(dataStr);
+
+      soundManager.createSound({
+        id: "render" + Math.abs(dataStr.hashCode()),
+        url: "/render.wav?" + dataStr,
+        onfinish: function() {
+          console.log("Destroying sound");
+          this.destruct();
+        }
+      }).play();
+    }
+
+    submit = _.throttle(submit, 100);
+
+    var addSliderElement = function(data) {
+      var name = data.name || data.parameterName;
+      var input = $("<input type='text'>");
+      $("<div class='well'></div>").text(data.name || data.parameterName)
+        .append(input).appendTo('.sliders');
+
+      input.data(data).slider({
+        min: data.min || 0, max: data.max || 1,
+        step: data.step || 0.05, value: data.val || INITIAL_VALUE,
+        formater/*sic*/: function(value) {return name+": "+roundDec(value);}
+      }).on('slide', submit);
+
+      sliderElements.push(input);
+    }
+
+    soundManager.setup({
+      url: '/swf',
+      preferFlash: false,
+      onready: function() {
+        addSliderElement({name: 'midiPitch', min: 20, max: 100, step: 1, val: 60});
+
+        $.getJSON('/list.json', function(data) {
+          _(data.parameterNames).map(function(name) {
+            addSliderElement({parameterName: name})
+          });
+          submit();
+        });
+      },
+      ontimeout: function() {
+        alert("SoundManager could not start. If Flash is blocked, please allow it.");
+      }
+    })
+  </script>
+</head>
+<body>
+  <div class="container">
+    <h1>Jucebouncer Demo</h1>
+
+    <div class="row-fluid">
+      <div class="span8 sliders">
+      </div>
+      <div class="span4 render">
+      </div>
+    </div>
+  </div>
+</body>
+</html>

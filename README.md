@@ -6,17 +6,22 @@ or other plugin. Parameter settings can be specified through JSON post data.
 
 ## API
 
-`GET /test.html` for an interactive demo using Javascript.
+`GET /index.html` or `GET /` for an interactive demo using Javascript.
 
 `GET /list.json` to list the names of all plugin parameters that can 
 be modified. Each of these is normalized to a floating-point value between
 0 and 1.
 
-`POST /render.wav` to render and download a WAV sound file corresponding
-to JSON content provided in the POST data. See AudioRequestParameters in
-[main.cpp](src/main.cpp) for more details about what parameters are accepted.
-Note that you can force this endpoint to emit JSON as above by setting .
+`GET /render.wav` to render and download a WAV sound file corresponding
+to the *entire* query string decoded and parsed as JSON. For instance, `GET /render.wav?{%22foo%22:%22bar%22}` will be parsed as `{"foo": "bar"}`. 
+See AudioRequestParameters in [main.cpp](src/main.cpp) for more details
+about what parameters are accepted.
+Note that you can force this endpoint to emit JSON as above by setting
 `{'listParameters':true}`.
+
+`POST /render.wav` to render and download a WAV sound file corresponding
+to JSON content provided in the POST data, with the same semantics as the
+GET method.
 
 The following CURL commands demonstrate the functionality, assuming the
 service is running on port 8080:

@@ -3,6 +3,7 @@
 #include "JuceHeader.h"
 #include "mongoose.h"
 #include "NonDeletingOutputStream.h"
+#include "urlutils.h"
 
 // #include <csignal>
 // #define EMBED_BREAKPOINT raise(SIGINT)
@@ -173,36 +174,54 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
   }
 }
 
-static int begin_request_handler(struct mg_connection *conn) {
+static int beginRequestHandler(struct mg_connection *conn) {
+  enum BeginRequestHandlerReturnValues { HANDLED = 1, NOT_HANDLED = 0 };
+
   struct mg_request_info *info = mg_get_request_info(conn);
-  DBG << "Request URI: " << info->uri << endl;
-
-  MemoryBlock postDataBlock;
-  char postBuffer[1024];
-  int didRead = 0;
-  while (didRead = mg_read(conn, postBuffer, sizeof(postBuffer))) {
-    postDataBlock.append(postBuffer, didRead);
+  String uri(info->uri);
+  if (!uri.endsWithIgnoreCase(".json") && !uri.endsWithIgnoreCase(".wav")) {
+    // DBG << "Not handling as audio request" << endl;
+    return NOT_HANDLED;
   }
-  MemoryInputStream postStream(postDataBlock, false);
-  var postParsed = JSON::parse(postStream);
 
-  DBG << "Request JSON: " << JSON::toString(postParsed) << endl;
-  AudioRequestParameters params(postParsed);
-  if (String(info->uri).endsWithIgnoreCase(".json")) {
+  DBG << "Handling as audio request: " << uri << endl;
+
+  var parsed;
+  // First try to look in the query string
+  String queryString = urldecode(info->query_string);
+  // DBG << queryString << endl;
+  parsed = JSON::parse(queryString);
+  // Otherwise look in the POST data
+  if (!parsed) {
+    MemoryBlock postDataBlock;
+    char postBuffer[1024];
+    int didRead;
+    while (didRead = mg_read(conn, postBuffer, sizeof(postBuffer))) {
+      postDataBlock.append(postBuffer, didRead);
+    }
+    MemoryInputStream postStream(postDataBlock, false);
+    parsed = JSON::parse(postStream);
+  }
+
+  DBG << "Request JSON: " << JSON::toString(parsed, true) << endl;
+
+  AudioRequestParameters params(parsed);
+  if (uri.endsWithIgnoreCase(".json")) {
     params.setListParameters(true);
   }
-  DBG << "listParameters: " << params.listParameters << endl;
+  // DBG << "listParameters: " << params.listParameters << endl;
 
-  DBG << "Starting to handle audio request" << endl;
+  // DBG << "Starting to handle audio request" << endl;
   MemoryBlock block;
   MemoryOutputStream ostream(block, false);
+  int64 startTime = Time::currentTimeMillis();
   bool result = handleAudioRequest(params, ostream);
   if (!result) {
     DBG << "Unable to handle audio request!" << endl;
     mg_printf(conn, "HTTP/1.0 500 ERROR\r\n\r\n");
-    return 1;
+    return HANDLED;
   }
-  DBG << "Rendered audio request" << endl;
+  DBG << "Rendered audio request in " << (Time::currentTimeMillis() - startTime) << "ms" << endl;
 
   // Note: MemoryOutputStream::getDataSize() is the actual number of bytes written.
   // Do not use MemoryBlock::getSize() since this reports the memory allocated (but not initialized!)
@@ -213,14 +232,16 @@ static int begin_request_handler(struct mg_connection *conn) {
             (int)ostream.getDataSize(), params.contentType.toRawUTF8());
   mg_write(conn, ostream.getData(), ostream.getDataSize());
 
-  return 1;
+  return HANDLED;
 }
 
 int main (int argc, char *argv[]) {
   Logger::setCurrentLogger(&DEBUG_LOGGER);
 
   DBG << "Loading plugin..." << endl;
-  pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
+  for (int numPlugs = 0; numPlugs < 3; ++numPlugs) {
+    pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
+  }
 
   // Test: fire a request manually
   /*
@@ -236,11 +257,15 @@ int main (int argc, char *argv[]) {
   */
 
   struct mg_context *ctx;
-  const char *options[] = {"listening_ports", "8080", NULL};
+  const char *options[] = {
+    "document_root", "public",
+    "listening_ports", "8080",
+    NULL
+  };
   struct mg_callbacks callbacks;
 
   memset(&callbacks, 0, sizeof(callbacks));
-  callbacks.begin_request = begin_request_handler;
+  callbacks.begin_request = beginRequestHandler;
   ctx = mg_start(&callbacks, NULL, options);
   DBG << "Server started! Press ENTER to exit." << endl;
   getchar();  // Wait until user hits "enter"

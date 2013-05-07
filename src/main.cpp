@@ -10,10 +10,10 @@
 using namespace std;
 using namespace juce;
 
-static std::ostream &DEBUG = cerr;
+static std::ostream &DBG = cerr;
 class DebugLogger : public Logger {
   void logMessage(const String &message) {
-    DEBUG << message << endl;
+    DBG << message << endl;
   }
 };
 static DebugLogger DEBUG_LOGGER;
@@ -50,15 +50,18 @@ AudioPluginInstance *createSynthInstance() {
 }
 
 struct AudioRequestParameters {
+  bool listParameters;
   int sampleRate, blockSize, bitDepth;
   int nChannels, nSeconds;
   int midiChannel, midiPitch, midiVelocity;
   float noteSeconds;
-  String formatName;
+  String formatName, contentType;
+  NamedValueSet parameters;
 
   AudioRequestParameters(const var &params = var::null) {
     #define AUDIO_REQUEST_PARAMETERS_DEFAULT(name, default) \
       if (params[#name]) {name = params[#name];} else {name = default;}
+    AUDIO_REQUEST_PARAMETERS_DEFAULT(listParameters, false);
     AUDIO_REQUEST_PARAMETERS_DEFAULT(sampleRate, 44100)
     AUDIO_REQUEST_PARAMETERS_DEFAULT(blockSize, 2056)
     AUDIO_REQUEST_PARAMETERS_DEFAULT(bitDepth, 16)
@@ -68,7 +71,24 @@ struct AudioRequestParameters {
     AUDIO_REQUEST_PARAMETERS_DEFAULT(midiPitch, 60)
     AUDIO_REQUEST_PARAMETERS_DEFAULT(midiVelocity, 120)
     AUDIO_REQUEST_PARAMETERS_DEFAULT(noteSeconds, 1.0f)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(formatName, "wav")
+
+    setListParameters(params["listParameters"]);
+
+    DynamicObject *paramDynObj = params["parameters"].getDynamicObject();
+    if (paramDynObj) parameters = paramDynObj->getProperties();
+  }
+
+  void setListParameters(bool shouldList) {
+    if (shouldList) {
+      listParameters = true;
+      formatName = "json";
+      contentType = "application/json";
+    }
+    else {
+      listParameters = false;
+      formatName = "wav";
+      contentType = "audio/vnw.wave";
+    }
   }
 };
 
@@ -85,29 +105,48 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
       while (plugin = pluginPool[i++]) {
         const ScopedTryLock pluginTryLock(plugin->crit);
         if (pluginTryLock.isLocked()) {
+          DBG << "Handling with plugin " << i << endl;
           return handleAudioRequest(params, ostream, plugin);
         }
       }
+      DBG << "Trying again in " << WAIT << endl;
       Thread::sleep(WAIT);
     }
 
     // If we were unable to obtain a lock, return failure.
+    DBG << "Timeout" << endl;
     return false;
   }
   else {
     // Re-acquire the lock just in case.
     const ScopedLock pluginLock(plugin->crit);
     AudioPluginInstance *instance = plugin->instance; // unmanaged, for simplicity
+
+    if (params.listParameters) {
+      DBG << "Rendering parameter list" << endl;
+      var v(new DynamicObject());
+      var paramNames;
+      for (int i = 0, n = instance->getNumParameters(); i < n; ++i) {
+        String paramName = instance->getParameterName(i);
+        paramNames.insert(i, paramName);
+        // float paramValue = instance->getParameter(i);
+        // v.getDynamicObject().setProperty(Identifier(paramName), paramValue);
+      }
+      v.getDynamicObject()->setProperty(Identifier("parameterNames"), paramNames);
+      JSON::writeToStream(ostream, v);
+      return true;
+    }
     
     AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
     OptionalScopedPointer<AudioFormat> outputFormat(formatManager.findFormatForFileExtension(params.formatName), false);
+    if (!outputFormat) return false;
 
     instance->setNonRealtime(true);
     instance->prepareToPlay(params.sampleRate, params.blockSize);
     instance->setNonRealtime(true);
 
-    // The writer takes ownership of the output stream; the writer will delete it when the writer leaves scope.
+    // The writer takes ownership of the output stream; the  writer will delete it when the writer leaves scope.
     // Therefore, we pass a special pointer class that does not allow the writer to delete it.
     OutputStream *ostreamNonDeleting = new NonDeletingOutputStream(&ostream);
     ScopedPointer<AudioFormatWriter> writer(outputFormat->createWriterFor(ostreamNonDeleting,
@@ -124,9 +163,9 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
     AudioSampleBuffer buffer(params.nChannels, params.blockSize);
     int numBuffers = params.nSeconds * params.sampleRate / params.blockSize;
     for (int i = 0; i < numBuffers; ++i) {
-      // DEBUG << "Processing block " << i << "..." << flush;
+      // DBG << "Processing block " << i << "..." << flush;
       instance->processBlock(buffer, midiBuffer);
-      // DEBUG << " left RMS level " << buffer.getRMSLevel(0, 0, params.blockSize) << endl;
+      // DBG << " left RMS level " << buffer.getRMSLevel(0, 0, params.blockSize) << endl;
       writer->writeFromAudioSampleBuffer(buffer, 0 /* offset into buffer */, params.blockSize);
     }
 
@@ -135,18 +174,44 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
 }
 
 static int begin_request_handler(struct mg_connection *conn) {
-  DEBUG << "Starting to handle audio request" << endl;
+  struct mg_request_info *info = mg_get_request_info(conn);
+  DBG << "Request URI: " << info->uri << endl;
+
+  MemoryBlock postDataBlock;
+  char postBuffer[1024];
+  int didRead = 0;
+  while (didRead = mg_read(conn, postBuffer, sizeof(postBuffer))) {
+    postDataBlock.append(postBuffer, didRead);
+  }
+  MemoryInputStream postStream(postDataBlock, false);
+  var postParsed = JSON::parse(postStream);
+
+  DBG << "Request JSON: " << JSON::toString(postParsed) << endl;
+  AudioRequestParameters params(postParsed);
+  if (String(info->uri).endsWithIgnoreCase(".json")) {
+    params.setListParameters(true);
+  }
+  DBG << "listParameters: " << params.listParameters << endl;
+
+  DBG << "Starting to handle audio request" << endl;
   MemoryBlock block;
   MemoryOutputStream ostream(block, false);
-  handleAudioRequest(AudioRequestParameters(), ostream);
-  DEBUG << "Rendered audio request" << endl;
+  bool result = handleAudioRequest(params, ostream);
+  if (!result) {
+    DBG << "Unable to handle audio request!" << endl;
+    mg_printf(conn, "HTTP/1.0 500 ERROR\r\n\r\n");
+    return 1;
+  }
+  DBG << "Rendered audio request" << endl;
 
+  // Note: MemoryOutputStream::getDataSize() is the actual number of bytes written.
+  // Do not use MemoryBlock::getSize() since this reports the memory allocated (but not initialized!)
   mg_printf(conn, "HTTP/1.0 200 OK\r\n"
             "Content-Length: %d\r\n"
-            "Content-Type: audio/vnw.wave\r\n"
+            "Content-Type: %s\r\n"
             "\r\n",
-            block.getSize());
-  mg_write(conn, block.getData(), block.getSize());
+            (int)ostream.getDataSize(), params.contentType.toRawUTF8());
+  mg_write(conn, ostream.getData(), ostream.getDataSize());
 
   return 1;
 }
@@ -154,19 +219,19 @@ static int begin_request_handler(struct mg_connection *conn) {
 int main (int argc, char *argv[]) {
   Logger::setCurrentLogger(&DEBUG_LOGGER);
 
-  DEBUG << "Loading plugin..." << endl;
+  DBG << "Loading plugin..." << endl;
   pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
 
   // Test: fire a request manually
   /*
   {
-    DEBUG << "Firing test request" << endl;
+    DBG << "Firing test request" << endl;
     MemoryBlock testBlock;
     MemoryOutputStream ostream(testBlock, false);
     handleAudioRequest(AudioRequestParameters(), ostream);
     File testFile(resolveRelativePath("tmp/output2.wav"));
     testFile.replaceWithData(testBlock.getData(), testBlock.getSize());
-    DEBUG << "Done firing test request" << endl;
+    DBG << "Done firing test request" << endl;
   }
   */
 
@@ -177,9 +242,10 @@ int main (int argc, char *argv[]) {
   memset(&callbacks, 0, sizeof(callbacks));
   callbacks.begin_request = begin_request_handler;
   ctx = mg_start(&callbacks, NULL, options);
-  DEBUG << "Waiting for enter" << endl;
+  DBG << "Waiting for enter" << endl;
   getchar();  // Wait until user hits "enter"
+  DBG << "Shutting down server threads" << endl;
   mg_stop(ctx);
-
+  DBG << "Exiting" << endl;
   return 0;
 }

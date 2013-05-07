@@ -12,28 +12,20 @@
   <script src="/js/bootstrap-slider.js"></script>
   <script src="/js/soundmanager2.js"></script>
   <script>
-    var INITIAL_VALUE = 0.5, EPS = 0.001;
+    var INITIAL_VALUE = 0, EPS = 0.001;
     var sliderElements = [];
+    var currentSound;
 
     function roundDec(value) {
       return Math.round(value*100)/100;
-    }
-
-    String.prototype.hashCode = function(){
-      var hash = 0;
-      if (this.length == 0) return hash;
-      for (i = 0; i < this.length; i++) {
-        char = this.charCodeAt(i);
-        hash = ((hash<<5)-hash)+char;
-        hash = hash & hash; // Convert to 32bit integer
-      }
-      return hash;
     }
 
     var submit = function() {
       var data = {parameters: {}};
       _(sliderElements).each(function(elem) {
         var val = elem.data('slider').getValue();
+        var initial = elem.data('initial');
+        if (Math.abs(val - initial) < EPS) return;
 
         var name;
         if (name = elem.data('parameterName')) {
@@ -49,16 +41,25 @@
       console.log(dataStr);
 
       soundManager.createSound({
-        id: "render" + Math.abs(dataStr.hashCode()),
+        id: "render" + Math.abs(Math.random()),
         url: "/render.wav?" + dataStr,
+        autoLoad: true,
+        onload: function() {
+          if (currentSound) {
+            currentSound.stop();
+            currentSound.destruct();
+          }
+          currentSound = this;
+          currentSound.play();
+        },
         onfinish: function() {
           console.log("Destroying sound");
           this.destruct();
         }
-      }).play();
+      });
     }
 
-    submit = _.throttle(submit, 100);
+    submit = _.throttle(submit, 300);
 
     var addSliderElement = function(data) {
       var name = data.name || data.parameterName;
@@ -66,9 +67,11 @@
       $("<div class='well'></div>").text(data.name || data.parameterName)
         .append(input).appendTo('.sliders');
 
+      data.initial = data.initial || data.val || INITIAL_VALUE;
+
       input.data(data).slider({
         min: data.min || 0, max: data.max || 1,
-        step: data.step || 0.05, value: data.val || INITIAL_VALUE,
+        step: data.step || 0.01, value: data.initial,
         formater/*sic*/: function(value) {return name+": "+roundDec(value);}
       }).on('slide', submit);
 
@@ -80,10 +83,12 @@
       preferFlash: false,
       onready: function() {
         addSliderElement({name: 'midiPitch', min: 20, max: 100, step: 1, val: 60});
+        addSliderElement({name: 'midiVelocity', min: 1, max: 127, step: 1, val: 120});
 
         $.getJSON('/list.json', function(data) {
-          _(data.parameterNames).map(function(name) {
-            addSliderElement({parameterName: name})
+          _(data.parameters).map(function(value, name) {
+            console.log(name, value);
+            addSliderElement({parameterName: name, val: value})
           });
           submit();
         });

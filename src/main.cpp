@@ -27,6 +27,7 @@ struct ThreadSafePlugin {
 };
 
 static OwnedArray<ThreadSafePlugin, CriticalSection> pluginPool;
+static NamedValueSet pluginDefaults;
 
 String resolveRelativePath(String relativePath) {
   return File::getCurrentWorkingDirectory().getChildFile(relativePath).getFullPathName();
@@ -48,6 +49,24 @@ AudioPluginInstance *createSynthInstance() {
   instance->prepareToPlay(44100, 512);
 
   return instance;
+}
+
+void pluginParametersOldNewFallback(AudioPluginInstance *instance,
+                                    NamedValueSet *oldValues = nullptr,
+                                    const NamedValueSet *newValues = nullptr,
+                                    const NamedValueSet *fallbackValues = nullptr) {
+  if (!instance) return;
+  for (int i = 0, n = instance->getNumParameters(); i < n; ++i) {
+    Identifier name(instance->getParameterName(i));
+    float currentValue = instance->getParameter(i);
+    if (oldValues) oldValues->set(name, currentValue);
+
+    if (newValues && newValues->contains(name)) {
+      instance->setParameter(i, (*newValues)[name]);
+    } else if (fallbackValues && fallbackValues->contains(name)) {
+      instance->setParameter(i, (*fallbackValues)[name]);
+    }
+  }
 }
 
 struct AudioRequestParameters {
@@ -123,20 +142,8 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
     const ScopedLock pluginLock(plugin->crit);
     AudioPluginInstance *instance = plugin->instance; // unmanaged, for simplicity
 
-    if (params.listParameters) {
-      DBG << "Rendering parameter list" << endl;
-      var v(new DynamicObject());
-      var paramNames;
-      for (int i = 0, n = instance->getNumParameters(); i < n; ++i) {
-        String paramName = instance->getParameterName(i);
-        paramNames.insert(i, paramName);
-        // float paramValue = instance->getParameter(i);
-        // v.getDynamicObject().setProperty(Identifier(paramName), paramValue);
-      }
-      v.getDynamicObject()->setProperty(Identifier("parameterNames"), paramNames);
-      JSON::writeToStream(ostream, v);
-      return true;
-    }
+    // Set parameter values
+    pluginParametersOldNewFallback(instance, nullptr, &params.parameters, &pluginDefaults);
     
     AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
@@ -184,7 +191,7 @@ static int beginRequestHandler(struct mg_connection *conn) {
     return NOT_HANDLED;
   }
 
-  DBG << "Handling as audio request: " << uri << endl;
+  // DBG << "Handling URI: " << uri << endl;
 
   var parsed;
   // First try to look in the query string
@@ -209,20 +216,31 @@ static int beginRequestHandler(struct mg_connection *conn) {
   if (uri.endsWithIgnoreCase(".json")) {
     params.setListParameters(true);
   }
-  // DBG << "listParameters: " << params.listParameters << endl;
 
-  // DBG << "Starting to handle audio request" << endl;
   MemoryBlock block;
   MemoryOutputStream ostream(block, false);
-  int64 startTime = Time::currentTimeMillis();
-  bool result = handleAudioRequest(params, ostream);
-  if (!result) {
-    DBG << "Unable to handle audio request!" << endl;
-    mg_printf(conn, "HTTP/1.0 500 ERROR\r\n\r\n");
-    return HANDLED;
-  }
-  DBG << "Rendered audio request in " << (Time::currentTimeMillis() - startTime) << "ms" << endl;
 
+  if (params.listParameters) {
+    DBG << "Rendering parameter list" << endl;
+    // These will be freed when their var's leave scope.
+    DynamicObject *outer = new DynamicObject(), *inner = new DynamicObject();
+    inner->getProperties() = pluginDefaults;
+    outer->setProperty(Identifier("parameters"), var(inner));
+    JSON::writeToStream(ostream, var(outer));
+  }
+
+  else {
+    // DBG << "Rendering audio request" << endl;
+    int64 startTime = Time::currentTimeMillis();
+    bool result = handleAudioRequest(params, ostream);
+    if (!result) {
+      DBG << "Unable to handle audio request!" << endl;
+      mg_printf(conn, "HTTP/1.0 500 ERROR\r\n\r\n");
+      return HANDLED;
+    }
+    DBG << "Rendered audio request in " << (Time::currentTimeMillis() - startTime) << "ms" << endl;
+  }
+  
   // Note: MemoryOutputStream::getDataSize() is the actual number of bytes written.
   // Do not use MemoryBlock::getSize() since this reports the memory allocated (but not initialized!)
   mg_printf(conn, "HTTP/1.0 200 OK\r\n"
@@ -242,6 +260,8 @@ int main (int argc, char *argv[]) {
   for (int numPlugs = 0; numPlugs < 3; ++numPlugs) {
     pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
   }
+
+  pluginParametersOldNewFallback(pluginPool[0]->instance, &pluginDefaults);
 
   // Test: fire a request manually
   /*

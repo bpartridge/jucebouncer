@@ -19,9 +19,10 @@ add_executable(jucebouncer
 
 include_directories(lib/juce lib/vstsdk2.4 JuceLibraryCode lib/mongoose)
 add_definitions(-DNDEBUG)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 
 if(APPLE)
-  set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-ObjC++ -mmacosx-version-min=10.6 --sysroot=/Developer/SDKs/MacOSX10.7.sdk")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ObjC++ -mmacosx-version-min=10.6 --sysroot=/Developer/SDKs/MacOSX10.7.sdk")
   INCLUDE_DIRECTORIES ( /System/Library/Frameworks )
   FIND_LIBRARY(ACCEL_LIBRARY Accelerate)
   FIND_LIBRARY(AUDIOTB_LIBRARY AudioToolbox)

@@ -3,5 +3,6 @@ bin/*
 CMakeFiles
 *.cmake
 CMakeCache.txt
+Makefile
 lib/vstsdk*
 tmp

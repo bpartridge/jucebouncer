@@ -72,7 +72,8 @@ instances, then releases it once rendering completes.
 ## Contributing
 
 Feel free to send a pull request for any reason. 
-See the [Issues](issues) page for known outstanding problems.
+See the [Issues](https://github.com/bpartridge/jucebouncer/issues) page 
+for known outstanding problems.
 
 ## License
 

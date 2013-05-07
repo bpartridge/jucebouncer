@@ -71,8 +71,8 @@ instances, then releases it once rendering completes.
 
 ## Contributing
 
-Feel free to send a pull request for any reason. See the Issues page for
-known outstanding problems.
+Feel free to send a pull request for any reason. 
+See the [Issues](issues) page for known outstanding problems.
 
 ## License
 

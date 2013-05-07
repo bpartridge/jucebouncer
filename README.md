@@ -36,8 +36,9 @@ service is running on port 8080:
 `curl localhost:8080/render.wav -s -d '{"midiPitch":80}' | play -`
 to hear the sound. 
 
-- Otherwise, if on OS X, run 
-`curl localhost:8080/render.wav -d '{"midiPitch":80}' > tmp/render2.wav && echo "Playing sound..." && afplay tmp/render2.wav`.
+- Otherwise, if on OS X, run:
+
+    curl localhost:8080/render.wav -d '{"midiPitch":80}' > tmp/render2.wav && echo "Playing sound..." && afplay tmp/render2.wav
 
 - `curl localhost:8080/list.json` should emit a list of parameter names that can be manipulated.
 
@@ -48,13 +49,13 @@ Clone this repository and run `git submodule init` and
 
 Before compiling, you must also make an account and download the 
 VST 2.3 & 2.4 development kit 
-[here](http://www.steinberg.net/en/company/developer.html).
+[here](http://www.steinberg.net/en/company/developer.html),
+since licensees are not allowed to distribute copies.
 Place the vstsdk2.4 directory in the lib directory such that you have
 files like `lib/vstsdk2.4/pluginterfaces/vst2.x/aeffect.h`.
 
-At the moment, Mac OS X is the only supported platform. 
-Installation requires CMake, which can be downloaded from 
-`http://www.cmake.org/cmake/resources/software.html`.
+At the moment, Mac OS X is the only supported platform. Installation requires 
+[CMake](http://www.cmake.org/cmake/resources/software.html).
 
 You can compile and start the server with 
 `cmake . && make && bin/jucebouncer`.
@@ -73,3 +74,8 @@ instances, then releases it once rendering completes.
 
 Feel free to send a pull request for any reason. See the Issues page for
 known outstanding problems.
+
+## License
+
+This software is released under the GNU General Public License and is
+(c) Brenton Partridge 2013.

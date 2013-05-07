@@ -141,6 +141,7 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
     // Re-acquire the lock just in case.
     const ScopedLock pluginLock(plugin->crit);
     AudioPluginInstance *instance = plugin->instance; // unmanaged, for simplicity
+    instance->reset();
 
     // Set parameter values
     pluginParametersOldNewFallback(instance, nullptr, &params.parameters, &pluginDefaults);
@@ -176,6 +177,8 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
       // DBG << " left RMS level " << buffer.getRMSLevel(0, 0, params.blockSize) << endl;
       writer->writeFromAudioSampleBuffer(buffer, 0 /* offset into buffer */, params.blockSize);
     }
+
+    instance->reset();
 
     return true;
   }

@@ -40,10 +40,16 @@ AudioPluginInstance *createSynthInstance() {
 
   PluginDescription desc;
   desc.fileOrIdentifier = resolveRelativePath("plugins/FreeAlpha.vst");
+  DBG << desc.fileOrIdentifier << endl;
   desc.uid = 0;
 
   String errorMessage;
   AudioPluginInstance *instance = pluginManager.createPluginInstance(desc, errorMessage);
+  
+  if (!instance) {
+    DBG << "Error creating plugin instance: " << errorMessage << endl;
+    exit(1);
+  }
 
   // Force initialization on the main thread. This preparation will redone with proper values later.
   instance->prepareToPlay(44100, 512);
@@ -122,7 +128,7 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
 
     while (Time::currentTimeMillis() < startTime + TIMEOUT) {
       int i = 0;
-      while (plugin = pluginPool[i++]) {
+      while ((plugin = pluginPool[i++])) {
         const ScopedTryLock pluginTryLock(plugin->crit);
         if (pluginTryLock.isLocked()) {
           DBG << "Handling with plugin " << i << endl;
@@ -206,7 +212,7 @@ static int beginRequestHandler(struct mg_connection *conn) {
     MemoryBlock postDataBlock;
     char postBuffer[1024];
     int didRead;
-    while (didRead = mg_read(conn, postBuffer, sizeof(postBuffer))) {
+    while ((didRead = mg_read(conn, postBuffer, sizeof(postBuffer)))) {
       postDataBlock.append(postBuffer, didRead);
     }
     MemoryInputStream postStream(postDataBlock, false);

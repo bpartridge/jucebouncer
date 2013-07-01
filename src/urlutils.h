@@ -2,7 +2,6 @@
 #ifndef __URLUTILS_HEADER__
 #define __URLUTILS_HEADER__
 
-#include "modules/juce_core/text/juce_String.h"
 #include <stdlib.h>
 #include <ctype.h>
 

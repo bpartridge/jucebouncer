@@ -4,17 +4,17 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY bin)
 add_executable(jucebouncer
   src/main.cpp
   lib/mongoose/mongoose.c
-  lib/juce/modules/juce_core/juce_core.cpp
-  lib/juce/modules/juce_audio_basics/juce_audio_basics.cpp
-  lib/juce/modules/juce_audio_devices/juce_audio_devices.cpp
-  lib/juce/modules/juce_audio_formats/juce_audio_formats.cpp
-  lib/juce/modules/juce_audio_processors/juce_audio_processors.cpp
-  lib/juce/modules/juce_audio_utils/juce_audio_utils.cpp
-  lib/juce/modules/juce_data_structures/juce_data_structures.cpp
-  lib/juce/modules/juce_events/juce_events.cpp
-  lib/juce/modules/juce_graphics/juce_graphics.cpp
-  lib/juce/modules/juce_gui_basics/juce_gui_basics.cpp
-  lib/juce/modules/juce_gui_extra/juce_gui_extra.cpp
+  lib/juce/modules/juce_core/juce_core.mm
+  lib/juce/modules/juce_audio_basics/juce_audio_basics.mm
+  lib/juce/modules/juce_audio_devices/juce_audio_devices.mm
+  lib/juce/modules/juce_audio_formats/juce_audio_formats.mm
+  lib/juce/modules/juce_audio_processors/juce_audio_processors.mm
+  lib/juce/modules/juce_audio_utils/juce_audio_utils.mm
+  lib/juce/modules/juce_data_structures/juce_data_structures.mm
+  lib/juce/modules/juce_events/juce_events.mm
+  lib/juce/modules/juce_graphics/juce_graphics.mm
+  lib/juce/modules/juce_gui_basics/juce_gui_basics.mm
+  lib/juce/modules/juce_gui_extra/juce_gui_extra.mm
   )
 
 include_directories(lib/juce lib/vstsdk2.4 JuceLibraryCode lib/mongoose)
@@ -22,7 +22,7 @@ add_definitions(-DNDEBUG)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 
 if(APPLE)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ObjC++")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   INCLUDE_DIRECTORIES ( /System/Library/Frameworks )
   FIND_LIBRARY(ACCEL_LIBRARY Accelerate)
   FIND_LIBRARY(AUDIOTB_LIBRARY AudioToolbox)

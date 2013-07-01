@@ -1,8 +1,6 @@
 #ifndef __NONDELETINGOUTPUTSTREAM_HEADER__
 #define __NONDELETINGOUTPUTSTREAM_HEADER__
 
-#include "modules/juce_core/streams/juce_OutputStream.h"
-
 class NonDeletingOutputStream : public juce::OutputStream {
 public:
   inline NonDeletingOutputStream(juce::OutputStream *const obj) noexcept : object(obj) {}

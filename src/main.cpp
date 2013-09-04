@@ -39,7 +39,7 @@ AudioPluginInstance *createSynthInstance() {
   pluginManager.addDefaultFormats();
 
   PluginDescription desc;
-  desc.fileOrIdentifier = resolveRelativePath("plugins/FreeAlpha.vst");
+  desc.fileOrIdentifier = resolveRelativePath("plugins/miniTERA.vst");
   DBG << desc.fileOrIdentifier << endl;
   desc.uid = 0;
 

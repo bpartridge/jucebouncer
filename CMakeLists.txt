@@ -16,6 +16,7 @@ add_executable(jucebouncer
   lib/juce/modules/juce_gui_basics/juce_gui_basics.mm
   lib/juce/modules/juce_gui_extra/juce_gui_extra.mm
   )
+set(CMAKE_OSX_ARCHITECTURES i386)
 
 include_directories(lib/juce lib/vstsdk2.4 JuceLibraryCode lib/mongoose)
 add_definitions(-DNDEBUG)

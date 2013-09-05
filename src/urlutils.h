@@ -30,7 +30,7 @@ juce::String urldecode(const juce::String &str) {
       else
         b -= '0';
 
-      char newChars[] = {16*a+b, '\0'}; 
+      char newChars[] = {static_cast<char>(16*a+b), '\0'};
       out += newChars;
       
       src+=3;

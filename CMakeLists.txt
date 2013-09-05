@@ -1,21 +1,6 @@
 cmake_minimum_required(VERSION 2.6)
 project(jucebouncer)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY bin)
-add_executable(jucebouncer
-  src/main.cpp
-  lib/mongoose/mongoose.c
-  lib/juce/modules/juce_core/juce_core.mm
-  lib/juce/modules/juce_audio_basics/juce_audio_basics.mm
-  lib/juce/modules/juce_audio_devices/juce_audio_devices.mm
-  lib/juce/modules/juce_audio_formats/juce_audio_formats.mm
-  lib/juce/modules/juce_audio_processors/juce_audio_processors.mm
-  lib/juce/modules/juce_audio_utils/juce_audio_utils.mm
-  lib/juce/modules/juce_data_structures/juce_data_structures.mm
-  lib/juce/modules/juce_events/juce_events.mm
-  lib/juce/modules/juce_graphics/juce_graphics.mm
-  lib/juce/modules/juce_gui_basics/juce_gui_basics.mm
-  lib/juce/modules/juce_gui_extra/juce_gui_extra.mm
-  )
 set(CMAKE_OSX_ARCHITECTURES i386)
 
 include_directories(lib/juce lib/vstsdk2.4 JuceLibraryCode lib/mongoose)
@@ -49,4 +34,22 @@ if(APPLE)
   SET(EXTRA_LIBS ${MAC_LIBS})
 endif(APPLE)
 
-target_link_libraries(jucebouncer ${EXTRA_LIBS})
+add_library(juce_common
+  lib/juce/modules/juce_core/juce_core.mm
+  lib/juce/modules/juce_audio_basics/juce_audio_basics.mm
+  lib/juce/modules/juce_audio_devices/juce_audio_devices.mm
+  lib/juce/modules/juce_audio_formats/juce_audio_formats.mm
+  lib/juce/modules/juce_audio_processors/juce_audio_processors.mm
+  lib/juce/modules/juce_audio_utils/juce_audio_utils.mm
+  lib/juce/modules/juce_data_structures/juce_data_structures.mm
+  lib/juce/modules/juce_events/juce_events.mm
+  lib/juce/modules/juce_graphics/juce_graphics.mm
+  lib/juce/modules/juce_gui_basics/juce_gui_basics.mm
+  lib/juce/modules/juce_gui_extra/juce_gui_extra.mm
+  )
+
+add_executable(jucepresets src/presets.cpp)
+target_link_libraries(jucepresets juce_common ${EXTRA_LIBS})
+
+add_executable(jucebouncer src/main.cpp lib/mongoose/mongoose.c)
+target_link_libraries(jucebouncer juce_common ${EXTRA_LIBS})

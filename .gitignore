@@ -8,3 +8,4 @@ lib/vstsdk*
 tmp
 Builds/MacOSX/build
 *.xcuser*
+*.a

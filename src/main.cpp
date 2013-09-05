@@ -6,7 +6,7 @@
 #include "urlutils.h"
 
 #define PLUGIN_POOL_SIZE 0
-#define PLUGIN_REL_PATH "plugins/Sylenth1Demo.vst"
+#define PLUGIN_REL_PATH "plugins/miniTERA.vst"
 
 // #include <csignal>
 // #define EMBED_BREAKPOINT raise(SIGINT)
@@ -66,7 +66,8 @@ AudioPluginInstance *createSynthInstance() {
 void pluginParametersOldNewFallback(AudioPluginInstance *instance,
                                     NamedValueSet *oldValues = nullptr,
                                     const NamedValueSet *newValues = nullptr,
-                                    const NamedValueSet *fallbackValues = nullptr) {
+                                    const NamedValueSet *fallbackValues = nullptr,
+                                    bool debugSets = false) {
   if (!instance) return;
   for (int i = 0, n = instance->getNumParameters(); i < n; ++i) {
     Identifier name(instance->getParameterName(i));
@@ -75,6 +76,10 @@ void pluginParametersOldNewFallback(AudioPluginInstance *instance,
 
     if (newValues && newValues->contains(name)) {
       instance->setParameter(i, (*newValues)[name]);
+      if (debugSets) {
+        float newValue = instance->getParameter(i);
+        DBG << "Set param " << i << " - " << name.toString() << " from " << currentValue << " to " << newValue << endl;
+      }
     } else if (fallbackValues && fallbackValues->contains(name)) {
       instance->setParameter(i, (*fallbackValues)[name]);
     }
@@ -166,7 +171,10 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
 
     // Attempt to reset the plugin in all ways possible.
     instance->reset();
-    pluginParametersOldNewFallback(instance, nullptr, &pluginDefaults); // note that the defaults may be empty
+    // Setting parameters here causes miniTERA to become unresponsive to parameter settings.
+    // It's possible that it's effectively pressing some interface buttons that change the editor mode entirely.
+    // It's not necessary anyways if the plugin instance has been freshly created (see above).
+    // pluginParametersOldNewFallback(instance, nullptr, &pluginDefaults); // note that the defaults may be empty
     instance->setCurrentProgram(0);
 
     // Load preset if specified, before listing or modifying parameters!
@@ -179,7 +187,7 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
 
     // If parameters requested, output them and return
     if (params.listParameters) {
-      DBG << "Rendering parameter list" << endl;
+      DBG << "Rendering parameter list: # parameters " << instance->getNumPrograms() << endl;
       NamedValueSet currParameters;
       pluginParametersOldNewFallback(instance, &currParameters);
 
@@ -202,7 +210,14 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
     }
 
     // Set parameter values
-    pluginParametersOldNewFallback(instance, nullptr, &params.parameters);
+    pluginParametersOldNewFallback(instance, nullptr, &params.parameters, nullptr);
+
+    // To debug, enumerate all parameters
+    {
+      for (int i = 0, n = instance->getNumParameters(); i < n; ++i) {
+        DBG << "param " << i << " - " << instance->getParameterName(i) << " = " << instance->getParameter(i) << endl;
+      }
+    }
     
     AudioFormatManager formatManager;
     formatManager.registerBasicFormats();

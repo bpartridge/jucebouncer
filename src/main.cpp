@@ -106,23 +106,16 @@ struct PluginRequestParameters {
     PLUGIN_REQUEST_PARAMETERS_DEFAULT(midiVelocity, 120)
     PLUGIN_REQUEST_PARAMETERS_DEFAULT(noteSeconds, 0.75f)
 
-    setListParameters(params["listParameters"]);
-
     DynamicObject *paramDynObj = params["parameters"].getDynamicObject();
     if (paramDynObj) parameters = paramDynObj->getProperties();
   }
 
-  void setListParameters(bool shouldList) {
-    if (shouldList) {
-      listParameters = true;
-      formatName = "json";
-      contentType = "application/json";
-    }
-    else {
-      listParameters = false;
-      formatName = "wav";
-      contentType = "audio/vnw.wave";
-    }
+  const char *getFormatName() const {
+    return listParameters ? "json" : "wav";
+  }
+
+  const char *getContentType() const {
+    return listParameters ? "application/json" : "audio/vnw.wave";
   }
 };
 
@@ -213,7 +206,7 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
     
     AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
-    OptionalScopedPointer<AudioFormat> outputFormat(formatManager.findFormatForFileExtension(params.formatName), false);
+    OptionalScopedPointer<AudioFormat> outputFormat(formatManager.findFormatForFileExtension(params.getFormatName()), false);
     if (!outputFormat) return false;
 
     instance->setNonRealtime(true);
@@ -282,7 +275,7 @@ static int beginRequestHandler(struct mg_connection *conn) {
 
   PluginRequestParameters params(parsed);
   if (uri.endsWithIgnoreCase(".json")) {
-    params.setListParameters(true);
+    params.listParameters = true;
   }
 
   MemoryBlock block;
@@ -304,7 +297,7 @@ static int beginRequestHandler(struct mg_connection *conn) {
             "Content-Length: %d\r\n"
             "Content-Type: %s\r\n"
             "\r\n",
-            (int)ostream.getDataSize(), params.contentType.toRawUTF8());
+            (int)ostream.getDataSize(), params.getContentType());
   mg_write(conn, ostream.getData(), ostream.getDataSize());
 
   return HANDLED;

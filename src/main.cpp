@@ -78,9 +78,9 @@ void pluginParametersOldNewFallback(AudioPluginInstance *instance,
 struct AudioRequestParameters {
   bool listParameters;
   int sampleRate, blockSize, bitDepth;
-  int nChannels, nSeconds;
+  int nChannels;
   int midiChannel, midiPitch, midiVelocity;
-  float noteSeconds;
+  float noteSeconds, renderSeconds;
   String formatName, contentType;
   NamedValueSet parameters;
 
@@ -92,11 +92,11 @@ struct AudioRequestParameters {
     AUDIO_REQUEST_PARAMETERS_DEFAULT(blockSize, 2056)
     AUDIO_REQUEST_PARAMETERS_DEFAULT(bitDepth, 16)
     AUDIO_REQUEST_PARAMETERS_DEFAULT(nChannels, 2)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(nSeconds, 3)
+    AUDIO_REQUEST_PARAMETERS_DEFAULT(renderSeconds, 1.5f)
     AUDIO_REQUEST_PARAMETERS_DEFAULT(midiChannel, 1)
     AUDIO_REQUEST_PARAMETERS_DEFAULT(midiPitch, 60)
     AUDIO_REQUEST_PARAMETERS_DEFAULT(midiVelocity, 120)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(noteSeconds, 1.0f)
+    AUDIO_REQUEST_PARAMETERS_DEFAULT(noteSeconds, 0.75f)
 
     setListParameters(params["listParameters"]);
 
@@ -149,8 +149,39 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
     AudioPluginInstance *instance = plugin->instance; // unmanaged, for simplicity
     instance->reset();
 
+    pluginParametersOldNewFallback(instance, nullptr, &pluginDefaults);
+
+    // Load preset if specified, or zero preset
+    // TODO
+    instance->setCurrentProgram(11);
+    DBG << "Current program: " << instance->getCurrentProgram() << endl;
+
+    // If parameters requested, output them and return
+    if (params.listParameters) {
+      DBG << "Rendering parameter list" << endl;
+      NamedValueSet currParameters;
+      pluginParametersOldNewFallback(instance, &currParameters);
+
+      // These will be freed when their var's leave scope.
+      DynamicObject *outer = new DynamicObject(), *innerParams = new DynamicObject();
+      innerParams->getProperties() = currParameters;
+      outer->setProperty(Identifier("parameters"), var(innerParams));
+
+      var progVar;
+      for (int i = 0, n = instance->getNumPrograms(); i < n; ++i) {
+        progVar.append(var(instance->getProgramName(i)));
+      }
+      outer->setProperty(Identifier("programs"), progVar);
+
+      var outerVar(outer);
+      JSON::writeToStream(ostream, outerVar);
+      DBG << JSON::toString(outerVar, true /* allOnOneLine */) << endl;
+
+      return true;
+    }
+
     // Set parameter values
-    pluginParametersOldNewFallback(instance, nullptr, &params.parameters, &pluginDefaults);
+    pluginParametersOldNewFallback(instance, nullptr, &params.parameters);
     
     AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
@@ -176,7 +207,7 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
                         params.noteSeconds * params.sampleRate);
 
     AudioSampleBuffer buffer(params.nChannels, params.blockSize);
-    int numBuffers = params.nSeconds * params.sampleRate / params.blockSize;
+    int numBuffers = (int)(params.renderSeconds * params.sampleRate / params.blockSize);
     for (int i = 0; i < numBuffers; ++i) {
       // DBG << "Processing block " << i << "..." << flush;
       instance->processBlock(buffer, midiBuffer);
@@ -229,26 +260,15 @@ static int beginRequestHandler(struct mg_connection *conn) {
   MemoryBlock block;
   MemoryOutputStream ostream(block, false);
 
-  if (params.listParameters) {
-    DBG << "Rendering parameter list" << endl;
-    // These will be freed when their var's leave scope.
-    DynamicObject *outer = new DynamicObject(), *inner = new DynamicObject();
-    inner->getProperties() = pluginDefaults;
-    outer->setProperty(Identifier("parameters"), var(inner));
-    JSON::writeToStream(ostream, var(outer));
+  // DBG << "Rendering audio request" << endl;
+  int64 startTime = Time::currentTimeMillis();
+  bool result = handleAudioRequest(params, ostream);
+  if (!result) {
+    DBG << "Unable to handle audio request!" << endl;
+    mg_printf(conn, "HTTP/1.0 500 ERROR\r\n\r\n");
+    return HANDLED;
   }
-
-  else {
-    // DBG << "Rendering audio request" << endl;
-    int64 startTime = Time::currentTimeMillis();
-    bool result = handleAudioRequest(params, ostream);
-    if (!result) {
-      DBG << "Unable to handle audio request!" << endl;
-      mg_printf(conn, "HTTP/1.0 500 ERROR\r\n\r\n");
-      return HANDLED;
-    }
-    DBG << "Rendered audio request in " << (Time::currentTimeMillis() - startTime) << "ms" << endl;
-  }
+  DBG << "Rendered audio request in " << (Time::currentTimeMillis() - startTime) << "ms" << endl;
   
   // Note: MemoryOutputStream::getDataSize() is the actual number of bytes written.
   // Do not use MemoryBlock::getSize() since this reports the memory allocated (but not initialized!)
@@ -266,7 +286,7 @@ int main (int argc, char *argv[]) {
   Logger::setCurrentLogger(&DEBUG_LOGGER);
 
   DBG << "Loading plugin..." << endl;
-  for (int numPlugs = 0; numPlugs < 3; ++numPlugs) {
+  for (int numPlugs = 0; numPlugs < 1; ++numPlugs) {
     pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
   }
 

@@ -6,7 +6,7 @@
 #include "urlutils.h"
 
 #define PLUGIN_POOL_SIZE 0
-#define PLUGIN_REL_PATH "plugins/miniTERA.vst"
+#define PLUGIN_REL_PATH "plugins/Sylenth1Demo.vst"
 
 // #include <csignal>
 // #define EMBED_BREAKPOINT raise(SIGINT)
@@ -31,9 +31,12 @@ struct ThreadSafePlugin {
 
 static OwnedArray<ThreadSafePlugin, CriticalSection> pluginPool;
 static NamedValueSet pluginDefaults;
+static File cwd = File::getCurrentWorkingDirectory();
 
 String resolveRelativePath(String relativePath) {
-  return File::getCurrentWorkingDirectory().getChildFile(relativePath).getFullPathName();
+  // We need to use a cached version of the working directory,
+  // since plugin initialization is done in a non-threadsafe way at the moment.
+  return cwd.getChildFile(relativePath).getFullPathName();
 }
 
 // The caller is responsible for deleting the object that is returned
@@ -196,7 +199,7 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
       for (int i = 0, n = instance->getNumPrograms(); i < n; ++i) {
         progVar.append(var(instance->getProgramName(i)));
       }
-      outer->setProperty(Identifier("programs"), progVar);
+      outer->setProperty(Identifier("presets"), progVar);
 
       var outerVar(outer);
       JSON::writeToStream(ostream, outerVar);
@@ -314,7 +317,9 @@ int main (int argc, char *argv[]) {
   // Consider testing PLUGIN_POOL_SIZE
   {
     DBG << "Loading plugin..." << endl;
-    for (int numPlugs = 0; numPlugs < (PLUGIN_POOL_SIZE || 1); ++numPlugs) {
+    int poolSize = PLUGIN_POOL_SIZE;
+    if (poolSize < 1) poolSize = 1;
+    for (int numPlugs = 0; numPlugs < poolSize; ++numPlugs) {
       pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
     }
 

@@ -20,6 +20,15 @@
       return Math.round(value*100)/100;
     }
 
+    // http://stackoverflow.com/questions/901115/how-can-i-get-query-string-values
+    function getParameterByName(name) {
+      name = name.replace(/[\[]/, "\\\[").replace(/[\]]/, "\\\]");
+      var regex = new RegExp("[\\?&]" + name + "=([^&#]*)"),
+          results = regex.exec(location.search);
+      return results == null ? null : decodeURIComponent(results[1].replace(/\+/g, " "));
+    }
+    var presetString = getParameterByName("preset");
+
     var submit = function() {
       var data = {parameters: {}};
       _(sliderElements).each(function(elem) {
@@ -34,8 +43,9 @@
         else if (name = elem.data('name')) {
           data[name] = roundDec(val);
         }
-
       });
+
+      if (presetString) data.presetNumber = parseInt(presetString);
 
       var dataStr = JSON.stringify(data);
       console.log(dataStr);
@@ -85,12 +95,23 @@
         addSliderElement({name: 'midiPitch', min: 20, max: 100, step: 1, val: 60});
         addSliderElement({name: 'midiVelocity', min: 1, max: 127, step: 1, val: 120});
 
-        $.getJSON('/list.json', function(data) {
-          _(data.parameters).map(function(value, name) {
-            console.log(name, value);
-            addSliderElement({parameterName: name, val: value})
-          });
-          submit();
+        $.ajax({
+          url: '/list.json', 
+          data: '{"presetNumber":' + presetString + '}',
+          success: function(data) {
+            var numParamsShown = 0;
+            _(data.parameters).map(function(value, name) {
+              if ((numParamsShown++) > 10) return;
+              console.log(name, value);
+              addSliderElement({parameterName: name, val: value})
+            });
+            var $presetsContainer = $('.presets');
+            _(data.presets).chain().first(20).map(function(name, index) {
+              console.log("Preset " + index + ": " + name);
+              $('<a>').attr({href: "?preset=" + index}).text(name + " ").appendTo($presetsContainer);
+            });
+            submit();
+          }
         });
       },
       ontimeout: function() {
@@ -104,9 +125,14 @@
     <h1>Jucebouncer Demo</h1>
 
     <div class="row-fluid">
-      <div class="span8 sliders">
+      <div class="span8">
+        <div class="presets">
+          <h5>Reload this page with a different preset:</h5>
+        </div>
+        <div class="sliders"></div>
       </div>
-      <div class="span4 render">
+      <div class="span4">
+        <div class="render"></div>
       </div>
     </div>
   </div>

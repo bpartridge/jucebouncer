@@ -101,9 +101,11 @@
           success: function(data) {
             var numParamsShown = 0;
             _(data.parameters).map(function(value, name) {
-              if ((numParamsShown++) > 10) return;
-              console.log(name, value);
-              addSliderElement({parameterName: name, val: value})
+              // if ((numParamsShown++) > 10) return;
+              setTimeout(function() {
+                console.log(name, value);
+                addSliderElement({parameterName: name, val: value});
+              }, 100);
             });
             var $presetsContainer = $('.presets');
             _(data.presets).chain().first(20).map(function(name, index) {

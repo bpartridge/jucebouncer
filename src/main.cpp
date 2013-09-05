@@ -5,6 +5,9 @@
 #include "NonDeletingOutputStream.h"
 #include "urlutils.h"
 
+#define PLUGIN_POOL_SIZE 0
+#define PLUGIN_REL_PATH "plugins/miniTERA.vst"
+
 // #include <csignal>
 // #define EMBED_BREAKPOINT raise(SIGINT)
 
@@ -39,7 +42,7 @@ AudioPluginInstance *createSynthInstance() {
   pluginManager.addDefaultFormats();
 
   PluginDescription desc;
-  desc.fileOrIdentifier = resolveRelativePath("plugins/miniTERA.vst");
+  desc.fileOrIdentifier = resolveRelativePath(PLUGIN_REL_PATH);
   DBG << desc.fileOrIdentifier << endl;
   desc.uid = 0;
 
@@ -75,7 +78,8 @@ void pluginParametersOldNewFallback(AudioPluginInstance *instance,
   }
 }
 
-struct AudioRequestParameters {
+struct PluginRequestParameters {
+  int presetNumber;
   bool listParameters;
   int sampleRate, blockSize, bitDepth;
   int nChannels;
@@ -84,19 +88,20 @@ struct AudioRequestParameters {
   String formatName, contentType;
   NamedValueSet parameters;
 
-  AudioRequestParameters(const var &params = var::null) {
-    #define AUDIO_REQUEST_PARAMETERS_DEFAULT(name, default) \
+  PluginRequestParameters(const var &params = var::null) {
+    #define PLUGIN_REQUEST_PARAMETERS_DEFAULT(name, default) \
       if (params[#name]) {name = params[#name];} else {name = default;}
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(listParameters, false);
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(sampleRate, 44100)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(blockSize, 2056)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(bitDepth, 16)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(nChannels, 2)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(renderSeconds, 1.5f)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(midiChannel, 1)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(midiPitch, 60)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(midiVelocity, 120)
-    AUDIO_REQUEST_PARAMETERS_DEFAULT(noteSeconds, 0.75f)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(presetNumber, -1)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(listParameters, false)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(sampleRate, 44100)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(blockSize, 2056)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(bitDepth, 16)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(nChannels, 2)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(renderSeconds, 1.5f)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(midiChannel, 1)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(midiPitch, 60)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(midiVelocity, 120)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(noteSeconds, 0.75f)
 
     setListParameters(params["listParameters"]);
 
@@ -118,9 +123,17 @@ struct AudioRequestParameters {
   }
 };
 
-bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostream, 
-                        ThreadSafePlugin *plugin = nullptr) {
+bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &ostream, 
+                         ThreadSafePlugin *plugin = nullptr) {
   if (!plugin) {
+    // It's very possible that all of this was a premature optimization.
+    // For VSTs at least, code loading and caching is handled by ModuleHandle::findOrCreateModule,
+    // and each instantiation only requires a couple of disc hits for working directory setting.
+    // On the other hand, we want to make sure that each audio request has a "fresh" instance.
+    // The easiest way to do this is by bypassing the instance pool and instantiating on demand.
+
+    #if PLUGIN_POOL_SIZE
+
     // Recurse with a plugin from the pool, locking on it.
     // Keep trying with a delay until a timeout occurs.
     const int TIMEOUT = 5000, WAIT = 200;
@@ -132,7 +145,7 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
         const ScopedTryLock pluginTryLock(plugin->crit);
         if (pluginTryLock.isLocked()) {
           DBG << "Handling with plugin " << i << endl;
-          return handleAudioRequest(params, ostream, plugin);
+          return handlePluginRequest(params, ostream, plugin);
         }
       }
       DBG << "Trying again in " << WAIT << endl;
@@ -142,19 +155,31 @@ bool handleAudioRequest(const AudioRequestParameters &params, OutputStream &ostr
     // If we were unable to obtain a lock, return failure.
     DBG << "Timeout" << endl;
     return false;
+
+    #else
+
+    ThreadSafePlugin temporaryPlugin(createSynthInstance());
+    return handlePluginRequest(params, ostream, &temporaryPlugin);
+
+    #endif
   }
   else {
-    // Re-acquire the lock just in case.
+    // Re-acquire or acquire the lock.
     const ScopedLock pluginLock(plugin->crit);
     AudioPluginInstance *instance = plugin->instance; // unmanaged, for simplicity
+
+    // Attempt to reset the plugin in all ways possible.
     instance->reset();
+    pluginParametersOldNewFallback(instance, nullptr, &pluginDefaults); // note that the defaults may be empty
+    instance->setCurrentProgram(0);
 
-    pluginParametersOldNewFallback(instance, nullptr, &pluginDefaults);
-
-    // Load preset if specified, or zero preset
-    // TODO
-    instance->setCurrentProgram(11);
-    DBG << "Current program: " << instance->getCurrentProgram() << endl;
+    // Load preset if specified, before listing or modifying parameters!
+    if (params.presetNumber >= 0 && params.presetNumber < instance->getNumPrograms()) {
+      DBG << "Setting program/preset: " << params.presetNumber << endl;
+      instance->setCurrentProgram(params.presetNumber);
+    }
+    int currentProgram = instance->getCurrentProgram();
+    DBG << "Current program/preset: " << currentProgram << " - " << instance->getProgramName(currentProgram) << endl;
 
     // If parameters requested, output them and return
     if (params.listParameters) {
@@ -252,7 +277,7 @@ static int beginRequestHandler(struct mg_connection *conn) {
 
   DBG << "Request JSON: " << JSON::toString(parsed, true) << endl;
 
-  AudioRequestParameters params(parsed);
+  PluginRequestParameters params(parsed);
   if (uri.endsWithIgnoreCase(".json")) {
     params.setListParameters(true);
   }
@@ -262,7 +287,7 @@ static int beginRequestHandler(struct mg_connection *conn) {
 
   // DBG << "Rendering audio request" << endl;
   int64 startTime = Time::currentTimeMillis();
-  bool result = handleAudioRequest(params, ostream);
+  bool result = handlePluginRequest(params, ostream);
   if (!result) {
     DBG << "Unable to handle audio request!" << endl;
     mg_printf(conn, "HTTP/1.0 500 ERROR\r\n\r\n");
@@ -285,12 +310,17 @@ static int beginRequestHandler(struct mg_connection *conn) {
 int main (int argc, char *argv[]) {
   Logger::setCurrentLogger(&DEBUG_LOGGER);
 
-  DBG << "Loading plugin..." << endl;
-  for (int numPlugs = 0; numPlugs < 1; ++numPlugs) {
-    pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
-  }
+  #if 1 // Always load one instance to the pool to keep the plugin in cache
+  // Consider testing PLUGIN_POOL_SIZE
+  {
+    DBG << "Loading plugin..." << endl;
+    for (int numPlugs = 0; numPlugs < (PLUGIN_POOL_SIZE || 1); ++numPlugs) {
+      pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
+    }
 
-  pluginParametersOldNewFallback(pluginPool[0]->instance, &pluginDefaults);
+    pluginParametersOldNewFallback(pluginPool[0]->instance, &pluginDefaults);
+  }
+  #endif
 
   // Test: fire a request manually
   /*
@@ -298,7 +328,7 @@ int main (int argc, char *argv[]) {
     DBG << "Firing test request" << endl;
     MemoryBlock testBlock;
     MemoryOutputStream ostream(testBlock, false);
-    handleAudioRequest(AudioRequestParameters(), ostream);
+    handlePluginRequest(PluginRequestParameters(), ostream);
     File testFile(resolveRelativePath("tmp/output2.wav"));
     testFile.replaceWithData(testBlock.getData(), testBlock.getSize());
     DBG << "Done firing test request" << endl;

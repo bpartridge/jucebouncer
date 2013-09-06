@@ -196,15 +196,30 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
       innerParams->getProperties() = currParameters;
       outer->setProperty(Identifier("parameters"), var(innerParams));
 
+      var indexedParamVar;
+      {
+        for (int i = 0, n = instance->getNumParameters(); i < n; ++i) {
+          var indexedInnerVar;
+          DynamicObject *indexedInnerObj = new DynamicObject();
+          indexedInnerObj->setProperty("index", i);
+          indexedInnerObj->setProperty("name", instance->getParameterName(i));
+          indexedInnerObj->setProperty("value", instance->getParameter(i));
+          indexedParamVar.append(var(indexedInnerObj)); // frees indexedInnerObj when this scope ends
+        }
+      }
+      outer->setProperty(Identifier("indexedParameters"), indexedParamVar);
+
       var progVar;
-      for (int i = 0, n = instance->getNumPrograms(); i < n; ++i) {
-        progVar.append(var(instance->getProgramName(i)));
+      {
+        for (int i = 0, n = instance->getNumPrograms(); i < n; ++i) {
+          progVar.append(var(instance->getProgramName(i)));
+        }
       }
       outer->setProperty(Identifier("presets"), progVar);
 
       var outerVar(outer);
       JSON::writeToStream(ostream, outerVar);
-      DBG << JSON::toString(outerVar, true /* allOnOneLine */) << endl;
+      // DBG << JSON::toString(outerVar, true /* allOnOneLine */) << endl;
 
       return true;
     }

@@ -88,7 +88,7 @@ void pluginParametersOldNewFallback(AudioPluginInstance *instance,
 
 struct PluginRequestParameters {
   int presetNumber;
-  bool listParameters;
+  bool listParameters, showEditor;
   int sampleRate, blockSize, bitDepth;
   int nChannels;
   int midiChannel, midiPitch, midiVelocity;
@@ -101,6 +101,7 @@ struct PluginRequestParameters {
       if (params[#name]) {name = params[#name];} else {name = default;}
     PLUGIN_REQUEST_PARAMETERS_DEFAULT(presetNumber, -1)
     PLUGIN_REQUEST_PARAMETERS_DEFAULT(listParameters, false)
+    PLUGIN_REQUEST_PARAMETERS_DEFAULT(showEditor, false)
     PLUGIN_REQUEST_PARAMETERS_DEFAULT(sampleRate, 44100)
     PLUGIN_REQUEST_PARAMETERS_DEFAULT(blockSize, 2056)
     PLUGIN_REQUEST_PARAMETERS_DEFAULT(bitDepth, 16)
@@ -116,11 +117,11 @@ struct PluginRequestParameters {
   }
 
   const char *getFormatName() const {
-    return listParameters ? "json" : "wav";
+    return listParameters ? "json" : showEditor ? "png" : "wav";
   }
 
   const char *getContentType() const {
-    return listParameters ? "application/json" : "audio/vnw.wave";
+    return listParameters ? "application/json" : showEditor ? "image/png" : "audio/vnw.wave";
   }
 };
 
@@ -224,6 +225,30 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
       return true;
     }
 
+    if (params.showEditor) {
+      DBG << "Creating editor" << endl;
+
+      AudioProcessorEditor *editor = instance->createEditorIfNeeded();
+      if (!editor) {
+        DBG << "Unable to create editor" << endl;
+        return false;
+      }
+
+      editor->setBufferedToImage(true);
+
+      Rectangle<int> bounds(0,0,500,500); // = editor->getLocalBounds();
+      Image img = editor->createComponentSnapshot(bounds, false);
+      // editor->addToDesktop(0);
+      // DBG << editor->isOnDesktop() << endl;
+      ImageFileFormat *format = ImageFileFormat::findImageFormatForFileExtension(File("ignored.png"));
+
+      DBG << "Writing image" << endl;
+      format->writeImageToStream(img, ostream);
+      DBG << "Wrote image" << endl;
+
+      return true;
+    }
+
     // Set parameter values
     pluginParametersOldNewFallback(instance, nullptr, &params.parameters, nullptr);
 
@@ -277,7 +302,9 @@ static int beginRequestHandler(struct mg_connection *conn) {
 
   struct mg_request_info *info = mg_get_request_info(conn);
   String uri(info->uri);
-  if (!uri.endsWithIgnoreCase(".json") && !uri.endsWithIgnoreCase(".wav")) {
+  if (!uri.endsWithIgnoreCase(".json") &&
+      !uri.endsWithIgnoreCase(".png") &&
+      !uri.endsWithIgnoreCase(".wav")) {
     // DBG << "Not handling as audio request" << endl;
     return NOT_HANDLED;
   }
@@ -306,6 +333,9 @@ static int beginRequestHandler(struct mg_connection *conn) {
   PluginRequestParameters params(parsed);
   if (uri.endsWithIgnoreCase(".json")) {
     params.listParameters = true;
+  }
+  else if (uri.endsWithIgnoreCase(".png")) {
+    params.showEditor = true;
   }
 
   MemoryBlock block;

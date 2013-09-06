@@ -30,7 +30,6 @@ struct ThreadSafePlugin {
 };
 
 static OwnedArray<ThreadSafePlugin, CriticalSection> pluginPool;
-static NamedValueSet pluginDefaults;
 static File cwd = File::getCurrentWorkingDirectory();
 
 String resolveRelativePath(String relativePath) {
@@ -46,7 +45,7 @@ AudioPluginInstance *createSynthInstance() {
 
   PluginDescription desc;
   desc.fileOrIdentifier = resolveRelativePath(PLUGIN_REL_PATH);
-  DBG << desc.fileOrIdentifier << endl;
+  // DBG << desc.fileOrIdentifier << endl;
   desc.uid = 0;
 
   String errorMessage;
@@ -63,29 +62,6 @@ AudioPluginInstance *createSynthInstance() {
   return instance;
 }
 
-void pluginParametersOldNewFallback(AudioPluginInstance *instance,
-                                    NamedValueSet *oldValues = nullptr,
-                                    const NamedValueSet *newValues = nullptr,
-                                    const NamedValueSet *fallbackValues = nullptr,
-                                    bool debugSets = false) {
-  if (!instance) return;
-  for (int i = 0, n = instance->getNumParameters(); i < n; ++i) {
-    Identifier name(instance->getParameterName(i));
-    float currentValue = instance->getParameter(i);
-    if (oldValues) oldValues->set(name, currentValue);
-
-    if (newValues && newValues->contains(name)) {
-      instance->setParameter(i, (*newValues)[name]);
-      if (debugSets) {
-        float newValue = instance->getParameter(i);
-        DBG << "Set param " << i << " - " << name.toString() << " from " << currentValue << " to " << newValue << endl;
-      }
-    } else if (fallbackValues && fallbackValues->contains(name)) {
-      instance->setParameter(i, (*fallbackValues)[name]);
-    }
-  }
-}
-
 struct PluginRequestParameters {
   int presetNumber;
   bool listParameters;
@@ -94,7 +70,7 @@ struct PluginRequestParameters {
   int midiChannel, midiPitch, midiVelocity;
   float noteSeconds, renderSeconds;
   String formatName, contentType;
-  NamedValueSet parameters;
+  NamedValueSet parameters, indexedParameters;
 
   PluginRequestParameters(const var &params = var::null) {
     #define PLUGIN_REQUEST_PARAMETERS_DEFAULT(name, default) \
@@ -111,8 +87,12 @@ struct PluginRequestParameters {
     PLUGIN_REQUEST_PARAMETERS_DEFAULT(midiVelocity, 120)
     PLUGIN_REQUEST_PARAMETERS_DEFAULT(noteSeconds, 0.75f)
 
-    DynamicObject *paramDynObj = params["parameters"].getDynamicObject();
-    if (paramDynObj) parameters = paramDynObj->getProperties();
+    #define PLUGIN_REQUEST_PARAMETER_DICT(name) { \
+      DynamicObject *paramDynObj = params[#name].getDynamicObject(); \
+      if (paramDynObj) name = paramDynObj->getProperties(); }
+
+    PLUGIN_REQUEST_PARAMETER_DICT(parameters)
+    PLUGIN_REQUEST_PARAMETER_DICT(indexedParameters)
   }
 
   const char *getFormatName() const {
@@ -123,6 +103,33 @@ struct PluginRequestParameters {
     return listParameters ? "application/json" : "audio/vnw.wave";
   }
 };
+
+void pluginParametersSet(AudioPluginInstance *instance, const NamedValueSet &parameters) {
+  int numParams = instance->getNumParameters();
+  for (int i = 0; i < numParams; ++i) {
+    Identifier name = instance->getParameterName(i);
+    var val = parameters.getWithDefault(name, var::null);
+    if (!val.isVoid()) {
+      DBG << "Setting named parameter " << i << " - " << name.toString() << " to " << (float)val;
+      instance->setParameter(i, (float)val);
+      DBG << "... reported as " << instance->getParameter(i) << endl;
+    }
+  }
+}
+
+void pluginParametersSetIndexed(AudioPluginInstance *instance, const NamedValueSet &indexedParameters) {
+  int numParams = instance->getNumParameters();
+  for (int j = 0, m = indexedParameters.size(); j < m; ++j) {
+    Identifier name = indexedParameters.getName(j);
+    int i = name.toString().getIntValue();
+    var val = indexedParameters.getValueAt(j);
+    if (!val.isVoid() && i >= 0 && i < numParams) {
+      DBG << "Setting indexed parameter " << i << " - " << name.toString() << " to " << (float)val;
+      instance->setParameter(i, (float)val);
+      DBG << "... reported as " << instance->getParameter(i) << endl;
+    }
+  }
+}
 
 bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &ostream, 
                          ThreadSafePlugin *plugin = nullptr) {
@@ -171,7 +178,7 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
 
     // Attempt to reset the plugin in all ways possible.
     instance->reset();
-    // Setting parameters here causes miniTERA to become unresponsive to parameter settings.
+    // Setting default parameters here causes miniTERA to become unresponsive to parameter settings.
     // It's possible that it's effectively pressing some interface buttons that change the editor mode entirely.
     // It's not necessary anyways if the plugin instance has been freshly created (see above).
     // pluginParametersOldNewFallback(instance, nullptr, &pluginDefaults); // note that the defaults may be empty
@@ -185,30 +192,37 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
     int currentProgram = instance->getCurrentProgram();
     DBG << "Current program/preset: " << currentProgram << " - " << instance->getProgramName(currentProgram) << endl;
 
+    // Set parameters, starting with named, then indexed
+    pluginParametersSet(instance, params.parameters);
+    pluginParametersSetIndexed(instance, params.indexedParameters);
+
     // If parameters requested, output them and return
     if (params.listParameters) {
       DBG << "Rendering parameter list: # parameters " << instance->getNumPrograms() << endl;
-      NamedValueSet currParameters;
-      pluginParametersOldNewFallback(instance, &currParameters);
 
-      // These will be freed when their var's leave scope.
-      DynamicObject *outer = new DynamicObject(), *innerParams = new DynamicObject();
-      innerParams->getProperties() = currParameters;
-      outer->setProperty(Identifier("parameters"), var(innerParams));
-
+      // Output each parameter setting in two places: 
+      // an indexed array and a dictionary by name
+      // All DynamicObjects created will be freed when their var's leave scope.
+      DynamicObject *outer = new DynamicObject();
+      DynamicObject *innerParams = new DynamicObject();
       var indexedParamVar;
       {
         for (int i = 0, n = instance->getNumParameters(); i < n; ++i) {
-          var indexedInnerVar;
+          String name = instance->getParameterName(i);
+          float val = instance->getParameter(i);
+          innerParams->setProperty(name, val);
+
           DynamicObject *indexedInnerObj = new DynamicObject();
           indexedInnerObj->setProperty("index", i);
-          indexedInnerObj->setProperty("name", instance->getParameterName(i));
-          indexedInnerObj->setProperty("value", instance->getParameter(i));
+          indexedInnerObj->setProperty("name", name);
+          indexedInnerObj->setProperty("value", val);
           indexedParamVar.append(var(indexedInnerObj)); // frees indexedInnerObj when this scope ends
         }
       }
+      outer->setProperty(Identifier("parameters"), var(innerParams));
       outer->setProperty(Identifier("indexedParameters"), indexedParamVar);
 
+      // List presets/programs.
       var progVar;
       {
         for (int i = 0, n = instance->getNumPrograms(); i < n; ++i) {
@@ -224,16 +238,7 @@ bool handlePluginRequest(const PluginRequestParameters &params, OutputStream &os
       return true;
     }
 
-    // Set parameter values
-    pluginParametersOldNewFallback(instance, nullptr, &params.parameters, nullptr);
-
-    // To debug, enumerate all parameters
-    {
-      for (int i = 0, n = instance->getNumParameters(); i < n; ++i) {
-        DBG << "param " << i << " - " << instance->getParameterName(i) << " = " << instance->getParameter(i) << endl;
-      }
-    }
-    
+    // Now attempt to render audio.
     AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
     OptionalScopedPointer<AudioFormat> outputFormat(formatManager.findFormatForFileExtension(params.getFormatName()), false);
@@ -315,11 +320,11 @@ static int beginRequestHandler(struct mg_connection *conn) {
   int64 startTime = Time::currentTimeMillis();
   bool result = handlePluginRequest(params, ostream);
   if (!result) {
-    DBG << "Unable to handle plugin request!" << endl;
+    DBG << "-> Unable to handle plugin request!" << endl;
     mg_printf(conn, "HTTP/1.0 500 ERROR\r\n\r\n");
     return HANDLED;
   }
-  DBG << "Rendered plugin request in " << (Time::currentTimeMillis() - startTime) << "ms" << endl;
+  DBG << "-> Rendered plugin request in " << (Time::currentTimeMillis() - startTime) << "ms" << endl;
   
   // Note: MemoryOutputStream::getDataSize() is the actual number of bytes written.
   // Do not use MemoryBlock::getSize() since this reports the memory allocated (but not initialized!)
@@ -345,8 +350,6 @@ int main (int argc, char *argv[]) {
     for (int numPlugs = 0; numPlugs < poolSize; ++numPlugs) {
       pluginPool.add(new ThreadSafePlugin(createSynthInstance()));
     }
-
-    pluginParametersOldNewFallback(pluginPool[0]->instance, &pluginDefaults);
   }
   #endif
 

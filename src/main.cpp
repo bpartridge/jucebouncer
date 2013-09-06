@@ -311,15 +311,15 @@ static int beginRequestHandler(struct mg_connection *conn) {
   MemoryBlock block;
   MemoryOutputStream ostream(block, false);
 
-  // DBG << "Rendering audio request" << endl;
+  // DBG << "Rendering plugin request" << endl;
   int64 startTime = Time::currentTimeMillis();
   bool result = handlePluginRequest(params, ostream);
   if (!result) {
-    DBG << "Unable to handle audio request!" << endl;
+    DBG << "Unable to handle plugin request!" << endl;
     mg_printf(conn, "HTTP/1.0 500 ERROR\r\n\r\n");
     return HANDLED;
   }
-  DBG << "Rendered audio request in " << (Time::currentTimeMillis() - startTime) << "ms" << endl;
+  DBG << "Rendered plugin request in " << (Time::currentTimeMillis() - startTime) << "ms" << endl;
   
   // Note: MemoryOutputStream::getDataSize() is the actual number of bytes written.
   // Do not use MemoryBlock::getSize() since this reports the memory allocated (but not initialized!)
